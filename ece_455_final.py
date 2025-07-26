@@ -1,4 +1,5 @@
 import sys
+from fractions import Fraction
 
 class Task:
     def __init__(self, execution_time, period, deadline, task_id):
@@ -9,6 +10,30 @@ class Task:
 
     def __repr__(self):
         return f"T{self.task_id}(e={self.execution_time}, P={self.period}, D={self.deadline})"
+
+def gcd(a, b):
+    """Calculate GCD."""
+    frac_a = Fraction(a).limit_denominator(1000)
+    frac_b = Fraction(b).limit_denominator(1000)
+    
+    while frac_b:
+        frac_a, frac_b = frac_b, frac_a % frac_b
+    return float(frac_a)
+
+def lcm(a, b):
+    """Calculate LCM of two numbers."""
+    return abs(a * b) / gcd(a, b)
+
+def calculate_hyperperiod(tasks):
+    """Calculate the hyperperiod."""
+    if not tasks:
+        return 0
+    
+    hyperperiod = tasks[0].period
+    for task in tasks[1:]:
+        hyperperiod = lcm(hyperperiod, task.period)
+    
+    return hyperperiod
 
 def read_tasks(filename):
     """Read tasks from input file."""
@@ -41,11 +66,14 @@ def main():
     
     filename = sys.argv[1]
     tasks = read_tasks(filename)
+
+    hyperperiod = calculate_hyperperiod(tasks)
     
     # TODO: Implement scheduling simulation
     print("Tasks loaded successfully:")
     for task in tasks:
         print(f"  {task}")
+    print(f"Hyperperiod: {hyperperiod}")
 
 if __name__ == "__main__":
     main()
