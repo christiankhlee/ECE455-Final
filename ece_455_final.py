@@ -7,6 +7,7 @@ class Task:
         self.period = float(period)
         self.deadline = float(deadline)
         self.task_id = task_id
+        self.preemption_count = 0
 
     def __repr__(self):
         return f"T{self.task_id}(e={self.execution_time}, P={self.period}, D={self.deadline})"
@@ -34,6 +35,24 @@ def calculate_hyperperiod(tasks):
         hyperperiod = lcm(hyperperiod, task.period)
     
     return hyperperiod
+
+def get_task_arrivals(tasks, hyperperiod):
+    """Generate all task arrivals within the hyperperiod."""
+    arrivals = []
+    
+    for task in tasks:
+        arrival_time = 0.0
+        while arrival_time < hyperperiod:
+            arrivals.append({
+                'time': arrival_time,
+                'task': task,
+                'absolute_deadline': arrival_time + task.deadline
+            })
+            arrival_time += task.period
+    
+    # Sort by arrival time, then by deadline for tie-breaking
+    arrivals.sort(key=lambda x: (x['time'], x['absolute_deadline']))
+    return arrivals
 
 def read_tasks(filename):
     """Read tasks from input file."""
@@ -68,12 +87,20 @@ def main():
     tasks = read_tasks(filename)
 
     hyperperiod = calculate_hyperperiod(tasks)
-    
+    arrivals = get_task_arrivals(tasks, hyperperiod)
+
     # TODO: Implement scheduling simulation
     print("Tasks loaded successfully:")
     for task in tasks:
         print(f"  {task}")
     print(f"Hyperperiod: {hyperperiod}")
+    print(f"Total arrivals in hyperperiod: {len(arrivals)}")
+    
+    print("\nTask arrivals:")
+    for arrival in arrivals[:10]:  # Show first 10 arrivals
+        print(f"  Time {arrival['time']}: {arrival['task']} (deadline: {arrival['absolute_deadline']})")
+    if len(arrivals) > 10:
+        print(f"  ... and {len(arrivals) - 10} more arrivals")
 
 if __name__ == "__main__":
     main()
