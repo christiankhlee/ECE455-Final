@@ -36,127 +36,153 @@ def calculate_hyperperiod(tasks):
     
     return hyperperiod
 
-def get_task_arrivals(tasks, hyperperiod):
-    """Generate all task arrivals within the hyperperiod."""
-    arrivals = []
+# def get_task_arrivals(tasks, hyperperiod):
+#     """Generate all task arrivals within the hyperperiod."""
+#     arrivals = []
     
-    for task in tasks:
-        arrival_time = 0.0
-        while arrival_time < hyperperiod:
-            arrivals.append({
-                'time': arrival_time,
-                'task': task,
-                'absolute_deadline': arrival_time + task.deadline
-            })
-            arrival_time += task.period
+#     for task in tasks:
+#         arrival_time = 0.0
+#         while arrival_time < hyperperiod:
+#             arrivals.append({
+#                 'time': arrival_time,
+#                 'task': task,
+#                 'absolute_deadline': arrival_time + task.deadline
+#             })
+#             arrival_time += task.period
     
-    # Sort by arrival time, then by deadline for tie-breaking
-    arrivals.sort(key=lambda x: (x['time'], x['absolute_deadline']))
-    return arrivals
+#     # Sort by arrival time, then by deadline for tie-breaking
+#     arrivals.sort(key=lambda x: (x['time'], x['absolute_deadline']))
+#     return arrivals
 
 def simulate_dm_scheduling(tasks):
     """Simulate Deadline Monotonic scheduling."""
     if not tasks:
         return True, []
     
-    # Handle very large hyperperiods (might indicate scheduling issues)
+    # Handle very large hyperperiods
     hyperperiod = calculate_hyperperiod(tasks)
-    if hyperperiod > 1000000:  # Reasonable upper bound
+    if hyperperiod > 1000000:
         return False, []
     
     # Reset task states
     for task in tasks:
         task.preemption_count = 0
     
-    # Get all task arrivals
-    arrivals = get_task_arrivals(tasks, hyperperiod)
+    # Generate all task job releases
+    jobs = []
+    for task in tasks:
+        release_time = 0.0
+        job_id = 0
+        while release_time < hyperperiod:
+            jobs.append({
+                'release_time': release_time,
+                'task': task,
+                'absolute_deadline': release_time + task.deadline,
+                'remaining_time': task.execution_time,
+                'job_id': job_id,
+                'completed': False
+            })
+            release_time += task.period
+            job_id += 1
     
+    # Sort jobs by release time
+    jobs.sort(key=lambda x: (x['release_time'], x['absolute_deadline']))
+    
+    # Simulation
     current_time = 0.0
-    current_task = None
-    ready_queue = []  # List of active task instances
-    arrival_index = 0
+    running_job = None
     
-    # Time resolution for simulation (handle floating point precision)
-    time_step = 0.001
+    # Create events list
+    events = []
+    for job in jobs:
+        events.append(('release', job['release_time'], job))
+        events.append(('deadline', job['absolute_deadline'], job))
     
-    while current_time < hyperperiod:
-        # Process all arrivals at current time
-        while (arrival_index < len(arrivals) and 
-               abs(arrivals[arrival_index]['time'] - current_time) < time_step/2):
-            arrival = arrivals[arrival_index]
-            task_instance = {
-                'task': arrival['task'],
-                'remaining_time': arrival['task'].execution_time,
-                'absolute_deadline': arrival['absolute_deadline'],
-                'arrival_time': current_time
-            }
-            ready_queue.append(task_instance)
-            arrival_index += 1
+    events.sort(key=lambda x: (x[1], x[0] == 'deadline'))  # Sort by time, deadlines first
+    
+    event_index = 0
+    
+    while event_index < len(events) or running_job is not None:
+        # Process all events at current time
+        while (event_index < len(events) and 
+               events[event_index][1] <= current_time + 1e-9):
+            event_type, event_time, job = events[event_index]
+            
+            if event_type == 'deadline' and not job['completed']:
+                if job['remaining_time'] > 1e-9:
+                    return False, []  # Deadline miss
+            
+            event_index += 1
         
-        # Remove completed tasks and check for deadline misses
-        ready_queue = [instance for instance in ready_queue 
-                      if instance['remaining_time'] > 0.001]  # Use small epsilon
+        # Get all ready jobs
+        ready_jobs = []
+        for job in jobs:
+            if (job['release_time'] <= current_time + 1e-9 and 
+                job['remaining_time'] > 1e-9 and 
+                not job['completed']):
+                ready_jobs.append(job)
         
-        # Check for deadline violations
-        for instance in ready_queue:
-            if current_time >= instance['absolute_deadline']:
-                return False, []
-        
-        if not ready_queue:
-            # No ready tasks, advance to next arrival
-            if arrival_index < len(arrivals):
-                current_time = arrivals[arrival_index]['time']
+        # If no ready jobs, advance to next event
+        if not ready_jobs:
+            running_job = None
+            if event_index < len(events):
+                current_time = events[event_index][1]
+                continue
             else:
                 break
-            continue
         
-        # Sort ready queue by deadline (DM scheduling)
-        ready_queue.sort(key=lambda x: x['absolute_deadline'])
-        
-        # Select highest priority task
-        next_task_instance = ready_queue[0]
+        # Sort by deadline (DM scheduling)
+        ready_jobs.sort(key=lambda x: (x['absolute_deadline'], x['task'].task_id))
+        highest_priority = ready_jobs[0]
         
         # Check for preemption
-        if (current_task is None or 
-            current_task['task'] != next_task_instance['task'] or
-            current_task['arrival_time'] != next_task_instance['arrival_time']):
+        if (running_job is not None and 
+            running_job != highest_priority and 
+            running_job['remaining_time'] > 1e-9):
+            running_job['task'].preemption_count += 1
+        
+        running_job = highest_priority
+        
+        # Find next event time
+        next_time = float('inf')
+        
+        # Next event
+        if event_index < len(events):
+            next_time = min(next_time, events[event_index][1])
+        
+        # Job completion
+        if running_job['remaining_time'] > 1e-9:
+            next_time = min(next_time, current_time + running_job['remaining_time'])
+        
+        # If no next time, we're stuck
+        if next_time == float('inf'):
+            break
+        
+        # Don't exceed hyperperiod
+        next_time = min(next_time, hyperperiod)
+        
+        # Execute
+        execution_time = next_time - current_time
+        if execution_time > 0 and running_job['remaining_time'] > 1e-9:
+            actual_execution = min(execution_time, running_job['remaining_time'])
+            running_job['remaining_time'] -= actual_execution
             
-            if current_task is not None:
-                # Count preemption for the task being preempted
-                current_task['task'].preemption_count += 1
-            
-            current_task = next_task_instance
+            if running_job['remaining_time'] <= 1e-9:
+                running_job['completed'] = True
+                running_job = None
         
-        # Determine next event time
-        next_event_time = current_time + time_step
+        current_time = next_time
         
-        # Check for next arrival
-        if arrival_index < len(arrivals):
-            next_event_time = min(next_event_time, arrivals[arrival_index]['time'])
-        
-        # Check for task completion
-        if current_task['remaining_time'] <= next_event_time - current_time + 0.0001:
-            next_event_time = current_time + current_task['remaining_time']
-        
-        # Execute current task
-        execution_time = next_event_time - current_time
-        current_task['remaining_time'] -= execution_time
-        
-        # If task completes, remove it from current_task
-        if current_task['remaining_time'] <= 0.001:
-            current_task = None
-        
-        current_time = next_event_time
+        # Safety check to prevent infinite loops
+        if current_time >= hyperperiod:
+            break
     
-    # Check if all tasks completed successfully
-    for instance in ready_queue:
-        if instance['remaining_time'] > 0.001:
+    # Check all jobs completed
+    for job in jobs:
+        if job['remaining_time'] > 1e-9:
             return False, []
     
-    # Collect preemption counts in task order
-    preemption_counts = [task.preemption_count for task in tasks]
-    
-    return True, preemption_counts
+    return True, [task.preemption_count for task in tasks]
 
 def read_tasks(filename):
     """Read tasks from input file."""
