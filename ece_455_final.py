@@ -1,5 +1,6 @@
 import sys
 from fractions import Fraction
+import math
 
 class Task:
     def __init__(self, execution_time, period, deadline, task_id):
@@ -26,15 +27,18 @@ def lcm(a, b):
     return abs(a * b) / gcd(a, b)
 
 def calculate_hyperperiod(tasks):
-    """Calculate the hyperperiod."""
     if not tasks:
         return 0
     
-    hyperperiod = tasks[0].period
-    for task in tasks[1:]:
-        hyperperiod = lcm(hyperperiod, task.period)
+    # Convert to integers by scaling
+    scale = 1000  # Based on 0.001 precision requirement
+    periods = [int(task.period * scale) for task in tasks]
     
-    return hyperperiod
+    hyperperiod_scaled = periods[0]
+    for period in periods[1:]:
+        hyperperiod_scaled = (hyperperiod_scaled * period) // math.gcd(hyperperiod_scaled, period)
+    
+    return hyperperiod_scaled / scale
 
 # def get_task_arrivals(tasks, hyperperiod):
 #     """Generate all task arrivals within the hyperperiod."""
@@ -61,7 +65,7 @@ def simulate_dm_scheduling(tasks):
     
     # Handle very large hyperperiods
     hyperperiod = calculate_hyperperiod(tasks)
-    if hyperperiod > 1000000:
+    if hyperperiod > 10000000:
         return False, []
     
     # Reset task states
